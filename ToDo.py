@@ -4,6 +4,16 @@ from datetime import datetime, timedelta
 import matplotlib.pyplot as plt
 from collections import Counter
 import os
+import time
+from openai import OpenAI
+import io
+import json
+
+# 環境変数からOpenAIのAPIキーを取得
+client = OpenAI(api_key="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")
+
+if client is None:
+    raise ValueError("APIキーが設定されていません。環境変数 'OPENAI_API_KEY' を設定してください。")
 
 # matplotlibで日本語フォントを設定
 plt.rcParams['font.family'] = 'DejaVu Sans'
@@ -12,6 +22,14 @@ plt.rcParams['font.sans-serif'] = ['Hiragino Sans', 'Yu Gothic', 'Meiryo', 'Taka
 # データファイルのパス
 DATA_FILE = 'todo_list.csv'
 ASSIGNEE_FILE = 'assignee_list.csv'  # 担当者リスト用ファイル
+
+# 初期化
+if "ai_df" not in st.session_state:
+    st.session_state.ai_df = None
+if "ai_ready" not in st.session_state:
+    st.session_state.ai_ready = False
+if "df" not in st.session_state:
+    st.session_state.df = pd.DataFrame(columns=["タスク名","期限","担当者","ステータス","完了日","備考"])
 
 # 担当者リストの読み込み
 def load_assignee_list():
@@ -163,7 +181,7 @@ with st.expander("📝 タスク個別登録（推奨）"):
             
             st.success(f'{len(tasks_to_add)}件のタスクを一括登録しました！')
             st.balloons()  # 成功時の演出
-            
+            time.sleep(2)
             # ページをリロード
             st.rerun()
         else:
@@ -227,6 +245,117 @@ with st.expander("📁 一括登録（CSV）"):
             
             except Exception as e:
                 st.error(f'エラーが発生しました: {str(e)}')
+
+## AIがタスクを作る
+with st.expander("🧠 AIにタスクを作ってもらう（工事中）"):
+    st.write("**やりたいことを伝えると、AIが必要なタスクを考えてくれます**")
+    input_text = st.text_input('やりたいことを入力してください：')
+    input_date = st.date_input('期日を設定してください')
+
+    if input_text and st.button('AIに問い合わせる', key='ask_ai'):
+        try:
+            # AIにタスク生成を依頼
+            # タスク名,期限,推定時間,担当者,ステータス,完了日,備考
+            prompt = f"""
+            以下のやりたいことを実現するために必要なタスクを、以下の形式で具体的に生成してください。
+            また、各タスクの期限については、やりたいことの期限から逆算してください。
+
+            やりたいこと：{input_text}
+            期限：{input_date}
+
+            出力形式：
+            タスク名,期限,詳細,推定工数
+            例：
+            プロジェクト計画の策定,2025-08-01,プロジェクトの計画をnotionにまとめる,4時間
+            チームメンバーとの打ち合わせ,2025-08-01,チームメンバーとkickoffをする,1.5時間
+            """
+
+            response = client.chat.completions.create(
+            model="gpt-4o",
+            messages=[
+                {"role": "user", "content": prompt}
+            ],
+            max_tokens=500
+        )
+            # AIの応答を取得
+            ai_response = response.choices[0].message.content
+            # CSV形式の文字列をDataFrameに変換
+            lines = ai_response.strip().split('\n')
+            if len(lines) > 1:
+                #　ヘッダー行を除いてデータ行のみ取得
+                data_lines = [line.strip() for line in lines[1:] if line.strip() and ',' in line]
+                
+                if data_lines:
+                        # CSV文字列を作成
+                        csv_string = "タスク名,期限,詳細,推定工数\n" + "\n".join(data_lines)
+                        
+                        # StringIOを使用してDataFrameに変換
+                        df_ai = pd.read_csv(io.StringIO(csv_string))
+                        
+                        # DataFrameを表示
+                        st.write("**AIが生成したタスク一覧：**")
+                        st.dataframe(df_ai, use_container_width=True)
+                        
+                        # タスクを既存のリストに追加するボタン
+                        if st.button('タスクをリストに追加', key='add_ai_tasks'):
+                            try:
+                                # df_aiの列名を既存のdfの構造に合わせて変換
+                                df_ai_converted = df_ai.copy()
+                                
+                                # 必要な列を追加・変換
+                                df_ai_converted['担当者'] = '渡邉 祥太'
+                                df_ai_converted['ステータス'] = '未着手'
+                                df_ai_converted['完了日'] = None
+                                df_ai_converted['備考'] = df_ai_converted['詳細']
+                                
+                                # 既存のdfの列順序に合わせて並び替え
+                                df_ai_converted = df_ai_converted[['タスク名', '期限', '担当者', 'ステータス', '完了日', '備考']]
+                        
+                                # DataFrameを表示
+                                st.write("**AIが加工したタスク一覧：**")
+                                st.dataframe(df_ai_converted, use_container_width=True)                             
+                        
+                                # 既存のdfに一括で追加
+                                df = pd.concat([df, df_ai_converted], ignore_index=True)
+                                st.dataframe(df_ai_converted, use_container_width=True)
+
+                                if st.button('OK'):
+                                    # データを保存
+                                    save_data(df)
+                                
+                                    st.success(f"{len(df_ai)}件のタスクを追加しました！")
+                                    time.sleep(2)
+                                    st.rerun()
+                            
+                            except Exception as e:
+                                st.error(f"エラーが発生しました: {str(e)}")
+                                st.write("エラーの詳細:", e)
+
+                        # if st.button('タスクをリストに追加'):
+                        #     for _, row in df_ai.iterrows():
+                        #         new_task = {
+                        #             'タスク名': row['タスク名'],
+                        #             '期限': row['期限'],
+                        #             '担当者': '渡邉 祥太',  # 固定値に設定
+                        #             'ステータス': '未着手',
+                        #             '完了日': None,
+                        #             '備考': row['詳細']
+                        #         }
+                        #         # 既存のタスクリストに追加（todo_listの構造に合わせて調整）
+                        #         df = pd.concat([df, pd.DataFrame([new_task])], ignore_index=True)
+                            
+                        #     # ここで既存のデータ保存処理を呼び出す
+                        #     save_data(df)
+                        #     st.success(f"{len(df_ai)}件のタスクを追加しました！")
+                        #     time.sleep(2)
+                        #     st.rerun()  # ページをリロードして変更を反映
+                else:
+                    st.error("AIの応答を適切な形式で解析できませんでした。")
+            else:
+                st.error("AIの応答が空です。")
+        except Exception as e:
+            st.error(f"エラーが発生しました: {str(e)}")
+            st.write("AIの応答:", ai_response)
 
 # 現在のタスク一覧を表示
 st.subheader('📖 未完了のタスク一覧')
