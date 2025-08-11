@@ -1,0 +1,29 @@
+# macOS関連
+.DS_Store
+.localized
+
+# PowerPoint一時ファイル
+~$*.pptx
+~$*.ppt
+
+# 画像・動画ファイル
+*.png
+*.jpg
+*.jpeg
+*.gif
+*.mov
+*.mp4
+
+# データファイル
+*.csv
+*.xlsx
+*.xls
+
+# アプリケーションフォルダ
+DataLoader*/
+dataloader*/
+
+# その他のフォルダ
+PJファイル/
+Salesforce環境/
+python_code/
