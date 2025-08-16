@@ -222,11 +222,12 @@ with st.expander("📁 一括登録（CSV）"):
 ## AIがタスクを作る
 with st.expander("🧠 AIにタスクを作ってもらう（gpt-4o）"):
     st.write("**やりたいことを伝えると、AIが必要なタスクを考えてくれます**")
-    input_text = st.text_input('やりたいことを入力してください：')
+    input_text = st.text_input('やりたいことを入力してください：', placeholder="セキュリティ勉強会の開催に向けての準備考えて。今参加者は集め終わったところ")
     input_date = st.date_input('期日を設定してください')
 
     # 1) 生成ボタン：押されたときに session_state に結果を格納
     if input_text and st.button('AIに問い合わせる', key='ask_ai'):
+        st.success("プロンプトが正常に入力されました。")
         try:
             # AIにタスク生成を依頼
             # タスク名,期限,推定時間,担当者,ステータス,完了日,備考
@@ -255,9 +256,9 @@ with st.expander("🧠 AIにタスクを作ってもらう（gpt-4o）"):
             ai_response = response.choices[0].message.content
             # CSV形式の文字列をDataFrameに変換
             lines = ai_response.strip().split('\n')
-            if len(lines) > 1:
+            if len(lines) >= 1:
                 #　ヘッダー行を除いてデータ行のみ取得
-                data_lines = [line.strip() for line in lines[1:] if line.strip() and ',' in line]
+                data_lines = [line.strip() for line in lines[0:] if line.strip() and ',' in line]
                 
                 if data_lines:
                     # CSV文字列を作成
@@ -272,7 +273,7 @@ with st.expander("🧠 AIにタスクを作ってもらう（gpt-4o）"):
             else:
                 st.error("AIの応答が空です。")
         except Exception as e:
-            st.error(f"エラーが発生しました: {str(e)}")
+            st.error(f"APIエラーが発生しました: {str(e)}")
     
     # 2) 生成結果の表示（ボタンの if の外！）
     if st.session_state.ai_ready and st.session_state.ai_df is not None:
@@ -307,85 +308,93 @@ with st.expander("🧠 AIにタスクを作ってもらう（gpt-4o）"):
             except Exception as e:
                 st.error(f"エラーが発生しました: {str(e)}")
 
-# 現在のタスク一覧を表示
-st.subheader('📖 未完了のタスク一覧')
-st.write('ChatGPTに繋げる入力欄用意して、この画面からステータスを更新かけるようにしたい')
-st.write('例）1と5を完了にして、2と4は期日を1日後ろ倒して')
 
-# 未完了タスクのフィルタリング
-filtered_df = df[df['ステータス'] != '完了'].copy()
 
-if not filtered_df.empty:
-    st.dataframe(filtered_df)
-else:
-    st.info("未完了のタスクはありません")
 
-# 完了済みタスクの表示
-st.subheader('📈完了済みタスク一覧')
-st.write('これまでのタスク消化数を日時でプロットしてみたい')
+tab1, tab2 = st.tabs(["未完了タスク", "完了タスク"])
 
-# 1週間前の日付を計算。日付入力フィールドが2列で横並びに表示
-col1, col2 = st.columns(2)
-with col1:
-    filter_start_date = st.date_input('開始日：', value=datetime.now().date() - timedelta(days=7))
-with col2:
-    filter_end_date = st.date_input('終了日：', value=datetime.now().date())
+with tab1:
+    # 現在のタスク一覧を表示
+    st.subheader('📖 未完了のタスク一覧')
+    st.write('ChatGPTに繋げる入力欄用意して、この画面からステータスを更新かけるようにしたい')
+    st.write('例）1と5を完了にして、2と4は期日を1日後ろ倒して')
+    
+    # 未完了タスクのフィルタリング
+    filtered_df = df[df['ステータス'] != '完了'].copy()
 
-# 完了済みタスクを日付範囲でフィルタリング
-completed_df = df[df['ステータス'] == '完了'].copy()
-if not completed_df.empty:
-    # 完了日をdatetime型に変換
-    completed_df['完了日'] = pd.to_datetime(completed_df['完了日'])
-    # 日付範囲でフィルタリング
-    completed_in_days = (completed_df['完了日'].dt.date >= filter_start_date) & (completed_df['完了日'].dt.date <= filter_end_date)
-    completed_df = completed_df[completed_in_days]
+    if not filtered_df.empty:
+        st.dataframe(filtered_df)
+        
+    else:
+        st.info("未完了のタスクはありません")
 
-# フィルタリング後のデータを表示（0件の場合も含む）
-if not completed_df.empty:
-    # 表示用に完了日をdate型に戻す
-    display_df = completed_df.copy()
-    display_df['完了日'] = display_df['完了日'].dt.date
-    
-    st.dataframe(display_df)
-    
-    # 完了日でグループ化して件数をカウント
-    completed_counts = completed_df['完了日'].value_counts()
-    
-    # 指定期間の全日付を生成
-    date_range = pd.date_range(start=filter_start_date, end=filter_end_date, freq='D')
-    
-    # 各日付の完了タスク数を取得（ない場合は0）
-    daily_counts = []
-    for date in date_range:
-        date_str = date.strftime('%Y-%m-%d')
-        count = completed_counts.get(date_str, 0)
-        daily_counts.append(count)
-    
-    # グラフの作成
-    fig, ax = plt.subplots(figsize=(10, 6))
-    
-    # 棒グラフの作成（指定期間の全日付）
-    ax.bar(range(len(date_range)), daily_counts)
-    
-    # 軸ラベルとタイトルの設定
-    ax.set_xlabel('Date')
-    ax.set_ylabel('Completed Tasks')
-    ax.set_title('Daily Task Completion Count')
-    
-    # x軸の日付ラベルを設定（指定期間の全日付）
-    ax.set_xticks(range(len(date_range)))
-    ax.set_xticklabels([d.strftime('%Y-%m-%d') for d in date_range], rotation=45)
-    
-    # Y軸の目盛りを整数刻みに設定
-    max_count = max(daily_counts) if daily_counts else 1
-    y_min = 0  # 最小値は常に0
-    y_max = max(10, max_count + 1)  # デフォルトで10、最大値が10を超える場合はその値+1
-    ax.set_yticks(range(0, y_max + 1))
-    ax.set_ylim(0, y_max)  # Y軸の範囲を設定
-    
-    # グラフの表示
-    st.pyplot(fig)
+with tab2:
+    # 完了済みタスクの表示
+    st.subheader('📈完了済みタスク一覧')
+    st.write('これまでのタスク消化数を日時でプロットしてみたい')
 
-else:
-    st.info(f"{filter_start_date}から{filter_end_date}の期間内に完了済みのタスクはありません")
+    # 1週間前の日付を計算。日付入力フィールドが2列で横並びに表示
+    col1, col2 = st.columns(2)
+    with col1:
+        filter_start_date = st.date_input('開始日：', value=datetime.now().date() - timedelta(days=7))
+    with col2:
+        filter_end_date = st.date_input('終了日：', value=datetime.now().date())
+
+    # 完了済みタスクを日付範囲でフィルタリング
+    completed_df = df[df['ステータス'] == '完了'].copy()
+    if not completed_df.empty:
+        # 完了日をdatetime型に変換
+        completed_df['完了日'] = pd.to_datetime(completed_df['完了日'])
+        # 日付範囲でフィルタリング
+        completed_in_days = (completed_df['完了日'].dt.date >= filter_start_date) & (completed_df['完了日'].dt.date <= filter_end_date)
+        completed_df = completed_df[completed_in_days]
+
+    # フィルタリング後のデータを表示（0件の場合も含む）
+    if not completed_df.empty:
+        # 表示用に完了日をdate型に戻す
+        display_df = completed_df.copy()
+        display_df['完了日'] = display_df['完了日'].dt.date
+        
+        st.dataframe(display_df)
+        
+        # 完了日でグループ化して件数をカウント
+        completed_counts = completed_df['完了日'].value_counts()
+        
+        # 指定期間の全日付を生成
+        date_range = pd.date_range(start=filter_start_date, end=filter_end_date, freq='D')
+        
+        # 各日付の完了タスク数を取得（ない場合は0）
+        daily_counts = []
+        for date in date_range:
+            date_str = date.strftime('%Y-%m-%d')
+            count = completed_counts.get(date_str, 0)
+            daily_counts.append(count)
+        
+        # グラフの作成
+        fig, ax = plt.subplots(figsize=(10, 6))
+        
+        # 棒グラフの作成（指定期間の全日付）
+        ax.bar(range(len(date_range)), daily_counts)
+        
+        # 軸ラベルとタイトルの設定
+        ax.set_xlabel('Date')
+        ax.set_ylabel('Completed Tasks')
+        ax.set_title('Daily Task Completion Count')
+        
+        # x軸の日付ラベルを設定（指定期間の全日付）
+        ax.set_xticks(range(len(date_range)))
+        ax.set_xticklabels([d.strftime('%Y-%m-%d') for d in date_range], rotation=45)
+        
+        # Y軸の目盛りを整数刻みに設定
+        max_count = max(daily_counts) if daily_counts else 1
+        y_min = 0  # 最小値は常に0
+        y_max = max(10, max_count + 1)  # デフォルトで10、最大値が10を超える場合はその値+1
+        ax.set_yticks(range(0, y_max + 1))
+        ax.set_ylim(0, y_max)  # Y軸の範囲を設定
+        
+        # グラフの表示
+        st.pyplot(fig)
+
+    else:
+        st.info(f"{filter_start_date}から{filter_end_date}の期間内に完了済みのタスクはありません")
 
