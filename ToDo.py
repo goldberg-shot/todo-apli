@@ -15,10 +15,6 @@ client = OpenAI(api_key="sk-proj-EyW4k6CZ3PbMFkktblT2UaVgI4XBeFvuHRTOVNNHcG-YYVG
 if client is None:
     raise ValueError("APIキーが設定されていません。環境変数 'OPENAI_API_KEY' を設定してください。")
 
-# matplotlibで日本語フォントを設定
-plt.rcParams['font.family'] = 'DejaVu Sans'
-plt.rcParams['font.sans-serif'] = ['Hiragino Sans', 'Yu Gothic', 'Meiryo', 'Takao', 'IPAexGothic', 'IPAPGothic', 'VL PGothic', 'Noto Sans CJK JP']
-
 # データファイルのパス
 DATA_FILE = 'todo_list.csv'
 ASSIGNEE_FILE = 'assignee_list.csv'  # 担当者リスト用ファイル
